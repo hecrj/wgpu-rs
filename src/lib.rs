@@ -60,8 +60,10 @@ pub use wgn::{
     VertexFormat,
 };
 
-#[cfg(not(target_arch = "wasm32"))]
 pub use wgn::winit;
+
+#[cfg(all(feature = "gl", target_arch = "wasm32"))]
+use winit::platform::web::WindowExtWebSys;
 
 #[cfg(all(feature = "gl", not(target_arch = "wasm32")))]
 pub use wgn::glutin;
@@ -476,9 +478,9 @@ impl Instance {
     }
 
     #[cfg(all(feature = "gl", target_arch = "wasm32"))]
-    pub fn new(canvas: web_sys::HtmlCanvasElement) -> Self {
+    pub fn new(window: &winit::window::Window) -> Self {
         Instance {
-            id: wgn::wgpu_create_webgl_instance(canvas)
+            id: wgn::wgpu_create_webgl_instance(window.canvas()),
         }
     }
 
@@ -563,10 +565,12 @@ impl Device {
     }
 
     /// Creates a shader module from SPIR-V source code.
-    pub fn create_shader_module(&self, spv: &[u32]) -> ShaderModule {
+    pub fn create_shader_module(&self, spv: &[u8]) -> ShaderModule {
         let desc = wgn::ShaderModuleDescriptor {
-            code: spv.as_ptr(),
-            code_length: spv.len(),
+            code: wgn::ByteArray {
+                bytes: spv.as_ptr(),
+                length: spv.len(),
+            },
         };
         ShaderModule {
             id: wgn::wgpu_device_create_shader_module(self.id, &desc),

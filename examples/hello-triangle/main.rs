@@ -1,50 +1,47 @@
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+
+use log::debug;
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(start)]
+pub fn wasm_main() {
+    use log::Level;
+    console_log::init_with_level(Level::Trace).expect("error initializing log");
+
+    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+    main();
+}
+
 fn main() {
     use wgpu::winit::{
-        ElementState,
-        Event,
-        EventsLoop,
-        KeyboardInput,
-        VirtualKeyCode,
-        WindowEvent,
+        event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
+        event_loop::{ControlFlow, EventLoop},
     };
 
-    env_logger::init();
+    let events_loop = EventLoop::new();
 
-    let mut events_loop = EventsLoop::new();
-
-    #[cfg(not(feature = "gl"))]
-    let (_window, instance, size, surface) = {
-        use wgpu::winit::Window;
-
-        let instance = wgpu::Instance::new();
+    let (window, instance, size, surface) = {
+        use wgpu::winit::window::Window;
 
         let window = Window::new(&events_loop).unwrap();
-        let size = window
-            .get_inner_size()
-            .unwrap()
-            .to_physical(window.get_hidpi_factor());
+        let size = window.inner_size().to_physical(window.hidpi_factor());
 
-        let surface = instance.create_surface(&window);
+        #[cfg(all(feature = "gl", target_arch = "wasm32"))]
+        let (instance, surface) = {
+            let instance = wgpu::Instance::new(&window);
+            let surface = instance.get_surface();
+            (instance, surface)
+        };
+
+        #[cfg(not(all(feature = "gl", target_arch = "wasm32")))]
+        let (instance, surface) = {
+            let instance = wgpu::Instance::new();
+            let surface = instance.create_surface(&window);
+            (instance, surface)
+        };
 
         (window, instance, size, surface)
-    };
-
-    #[cfg(feature = "gl")]
-    let (instance, size, surface) = {
-        let wb = wgpu::winit::WindowBuilder::new();
-        let cb = wgpu::glutin::ContextBuilder::new().with_vsync(true);
-        let context = wgpu::glutin::WindowedContext::new_windowed(wb, cb, &events_loop).unwrap();
-
-        let size = context
-            .window()
-            .get_inner_size()
-            .unwrap()
-            .to_physical(context.window().get_hidpi_factor());
-
-        let instance = wgpu::Instance::new(context);
-        let surface = instance.get_surface();
-
-        (instance, size, surface)
     };
 
     let adapter = instance.get_adapter(&wgpu::AdapterDescriptor {
@@ -92,7 +89,7 @@ fn main() {
         },
         primitive_topology: wgpu::PrimitiveTopology::TriangleList,
         color_states: &[wgpu::ColorStateDescriptor {
-            format: wgpu::TextureFormat::Bgra8Unorm,
+            format: wgpu::TextureFormat::Rgba8Unorm,
             color_blend: wgpu::BlendDescriptor::REPLACE,
             alpha_blend: wgpu::BlendDescriptor::REPLACE,
             write_mask: wgpu::ColorWrite::ALL,
@@ -107,15 +104,18 @@ fn main() {
         &surface,
         &wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-            format: wgpu::TextureFormat::Bgra8Unorm,
+            format: wgpu::TextureFormat::Rgba8Unorm,
             width: size.width.round() as u32,
             height: size.height.round() as u32,
         },
     );
-    let mut running = true;
-    while running {
-        events_loop.poll_events(|event| match event {
-            Event::WindowEvent { event, .. } => match event {
+
+    window.request_redraw();
+
+    events_loop.run(move |event, _, control_flow| match event {
+        Event::WindowEvent { event, .. } => {
+            debug!("{:?}", event);
+            match event {
                 WindowEvent::KeyboardInput {
                     input:
                         KeyboardInput {
@@ -125,34 +125,36 @@ fn main() {
                         },
                     ..
                 } => match code {
-                    VirtualKeyCode::Escape => running = false,
+                    VirtualKeyCode::Escape => *control_flow = ControlFlow::Exit,
                     _ => {}
                 },
-                WindowEvent::CloseRequested => running = false,
-                _ => {}
-            },
-            _ => {}
-        });
+                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                WindowEvent::RedrawRequested => {
+                    let frame = swap_chain.get_next_texture();
+                    let mut encoder =
+                        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+                    {
+                        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                                attachment: &frame.view,
+                                resolve_target: None,
+                                load_op: wgpu::LoadOp::Clear,
+                                store_op: wgpu::StoreOp::Store,
+                                clear_color: wgpu::Color::GREEN,
+                            }],
+                            depth_stencil_attachment: None,
+                        });
+                        rpass.set_pipeline(&render_pipeline);
+                        rpass.set_bind_group(0, &bind_group, &[]);
+                        rpass.draw(0..3, 0..1);
+                    }
 
-        let frame = swap_chain.get_next_texture();
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-        {
-            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &frame.view,
-                    resolve_target: None,
-                    load_op: wgpu::LoadOp::Clear,
-                    store_op: wgpu::StoreOp::Store,
-                    clear_color: wgpu::Color::GREEN,
-                }],
-                depth_stencil_attachment: None,
-            });
-            rpass.set_pipeline(&render_pipeline);
-            rpass.set_bind_group(0, &bind_group, &[]);
-            rpass.draw(0 .. 3, 0 .. 1);
+                    device.get_queue().submit(&[encoder.finish()]);
+                    window.request_redraw();
+                }
+                _ => *control_flow = ControlFlow::Poll,
+            }
         }
-
-        device.get_queue().submit(&[encoder.finish()]);
-    }
+        _ => *control_flow = ControlFlow::Poll,
+    });
 }
