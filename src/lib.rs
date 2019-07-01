@@ -501,7 +501,7 @@ impl Instance {
 
     /// Creates a surface from a window.
     #[cfg(not(feature = "gl"))]
-    pub fn create_surface(&self, window: &winit::Window) -> Surface {
+    pub fn create_surface(&self, window: &winit::window::Window) -> Surface {
         Surface {
             id: wgn::wgpu_instance_create_surface_from_winit(self.id, window),
         }
