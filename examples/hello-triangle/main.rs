@@ -18,23 +18,46 @@ fn main() {
         event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
         event_loop::{ControlFlow, EventLoop},
     };
+    env_logger::init();
 
     let events_loop = EventLoop::new();
 
+    #[cfg(all(feature = "gl", not(target_arch = "wasm32")))]
+    let (instance, size, surface) = {
+        let wb = wgpu::glutin::window::WindowBuilder::new();
+
+        let ctx = wgpu::glutin::ContextBuilder::new()
+            .build_windowed(wb, &events_loop)
+            .unwrap();
+
+        let ctx = unsafe { ctx.make_current().unwrap() };
+
+        let size = ctx.window().inner_size().to_physical(ctx.window().hidpi_factor());
+
+        let (instance, surface) = {
+            let instance = wgpu::Instance::new(ctx);
+            let surface = instance.get_surface();
+            (instance, surface)
+        };
+
+        (instance, size, surface)
+    };
+
+    #[cfg(any(not(feature = "gl"), target_arch = "wasm32"))]
     let (window, instance, size, surface) = {
         use wgpu::winit::window::Window;
 
         let window = Window::new(&events_loop).unwrap();
         let size = window.inner_size().to_physical(window.hidpi_factor());
 
-        #[cfg(all(feature = "gl", target_arch = "wasm32"))]
+        #[cfg(target_arch = "wasm32")]
         let (instance, surface) = {
             let instance = wgpu::Instance::new(&window);
             let surface = instance.get_surface();
             (instance, surface)
         };
 
-        #[cfg(not(all(feature = "gl", target_arch = "wasm32")))]
+        #[cfg(not(target_arch = "wasm32"))]
         let (instance, surface) = {
             let instance = wgpu::Instance::new();
             let surface = instance.create_surface(&window);
@@ -89,7 +112,7 @@ fn main() {
         },
         primitive_topology: wgpu::PrimitiveTopology::TriangleList,
         color_states: &[wgpu::ColorStateDescriptor {
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             color_blend: wgpu::BlendDescriptor::REPLACE,
             alpha_blend: wgpu::BlendDescriptor::REPLACE,
             write_mask: wgpu::ColorWrite::ALL,
@@ -104,12 +127,13 @@ fn main() {
         &surface,
         &wgpu::SwapChainDescriptor {
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             width: size.width.round() as u32,
             height: size.height.round() as u32,
         },
     );
 
+    #[cfg(target_arch = "wasm32")]
     window.request_redraw();
 
     events_loop.run(move |event, _, control_flow| match event {
@@ -150,6 +174,8 @@ fn main() {
                     }
 
                     device.get_queue().submit(&[encoder.finish()]);
+
+                    #[cfg(target_arch = "wasm32")]
                     window.request_redraw();
                 }
                 _ => *control_flow = ControlFlow::Poll,
