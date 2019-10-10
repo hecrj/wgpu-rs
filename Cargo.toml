@@ -23,9 +23,9 @@ default = []
 vulkan = ["wgn/gfx-backend-vulkan"]
 
 [dependencies]
-wgn = { package = "wgpu-native", git = "https://github.com/gfx-rs/wgpu", rev = "c3609d71c95dc5be1672c737ee4010e6a9408748" }
+wgn = { package = "wgpu-native", git = "https://github.com/gfx-rs/wgpu", rev = "5ba923c79fcd7e3e3a53c5fc7d64cf169c01050d" }
 arrayvec = "0.4"
-raw-window-handle = "0.1"
+raw-window-handle = "0.3"
 zerocopy = "0.2"
 
 [dev-dependencies]
@@ -34,4 +34,4 @@ env_logger = "0.6"
 glsl-to-spirv = "0.1"
 log = "0.4"
 png = "0.15"
-winit = "0.20.0-alpha3"
+winit = { version = "0.20.0-alpha3", git = "https://github.com/rust-windowing/winit", rev = "6f5e7e170cd7bd9be1bb302dd91ebd906d29cfe1" }
